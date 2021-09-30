@@ -15,6 +15,8 @@ from dotenv import load_dotenv
 from math import ceil
 import random
 
+from datetime import datetime
+
 random.seed()
 
 load_dotenv()
@@ -33,9 +35,46 @@ async def on_ready():
     for guild in bot.guilds:
         print('\t{0.name} (ID: {0.id})'.format(guild))
 
+@bot.command()
+async def test(ctx):
+    msg = await ctx.send("Test")
+    await msg.edit(content = "Yes")
+
 #adds doujins
 @bot.command()
 async def add(ctx, arg1, arg2):
+    if arg1 == "NH":
+        if arg2.isnumeric():
+            if not IDinList(ctx, arg2):
+                sauce = scrapeNHLink(arg2)
+                filename = f"db/server/{ctx.guild.id}_database.json"
+                try:
+                    with open(filename) as foo:
+                        data = json.load(foo)
+                        data['sauces'].append(sauce)
+                        foo.close
+                    with open(filename, 'w') as fin:
+                        fin.write(json.dumps(data))
+                        fin.close
+
+                    embed=discord.Embed(title = f"{arg2}: ✅ Added to the {ctx.guild.name} Database!", description = sauce['title'], color=0xccccff)
+                    embed.set_thumbnail(url = "https://i.ibb.co/NVTsVgG/1628593808494.png")
+                    embed.set_image(url = sauce['cover'])
+                    await ctx.send(embed = embed)
+                except FileNotFoundError:
+                    print(f"{filename} does not exist.")
+            else:
+                sauce = getSauceFromDB(ctx, arg2)
+                embed=discord.Embed(title = f"{arg2}: ❌ Already exists in the {ctx.guild.name} Database!", description = sauce['title'], color=0xff4d4d)
+                embed.set_thumbnail(url = "https://i.ibb.co/NVTsVgG/1628593808494.png")
+                embed.set_image(url = sauce['cover'])
+                await ctx.send(embed = embed)
+        else:
+            await ctx.send('those aren\'t numbers, foo!')
+
+
+    '''
+    USED FOR ADDING SAUCES INTO "SERVER DATABASES"
     if arg1 == "NH":
         if arg2.isnumeric():
             if not IDinList(ctx, arg2):
@@ -63,7 +102,8 @@ async def add(ctx, arg1, arg2):
                 embed.set_image(url = sauce['cover'])
                 await ctx.send(embed = embed)
         else:
-            await ctx.send('those aren\'t numbers, retard')
+            await ctx.send('those aren\'t numbers, foo!')
+    '''
 
 #looks up server doujin lists
 @bot.command()
@@ -74,7 +114,7 @@ async def list(ctx, arg1 = "1"):
     maxShowed = 5
     currentPage = int(arg1)
 
-    filename = f"db/{ctx.guild.id}_database"
+    filename = f"db/server/{ctx.guild.id}_database"
     try:
         embed = discord.Embed(title = f"{ctx.guild.name} Database", color=0x007bff)
         embed.set_thumbnail(url = ctx.guild.icon_url)
@@ -119,82 +159,91 @@ async def list(ctx, arg1 = "1"):
         await ctx.send(f"A database for {ctx.guild.name} does not exist. Create a database using `{PREFIX}createDB NH`")
 
 
-
 #looks up the doujin
 @bot.command()
-async def search(ctx, arg1, arg2 = "random", arg3 = "none"):
+async def search(ctx, arg1, arg2 = "random", *, arg3=None):
 
     arg1 = arg1.upper()
     arg2 = arg2.upper()
-    arg3 = arg3.upper()
+    
+    if arg3:
+        for arg in arg3:
+            arg = arg.upper()
 
     if arg1 == "NH":
-        if arg2.isnumeric():
+        if arg2.startswith("Q"):
+            msg = await ctx.send('Searching the web...')
+            gallery = scrapeNHGallery(tags = arg3)
+            try:
+                doujinID = random.choice(gallery)
+                await msg.edit(content = "Gallery has been found! Generating embed...")
+                if IDinList(ctx, doujinID):
+                    embed = generateNHEmbed(doujinID, True, ctx)
+                    await msg.edit(content = '[ ✅ ] This sauce already exists in your database', embed = embed)
+                else:
+                    embed = generateNHEmbed(doujinID)
+                    if cleanWS(embed.title) != '':
+                        await msg.edit(content = '[ ❌ ] This sauce does not exist in your database', embed = embed)
+                    else:
+                        await msg.edit(content = '[ ⁉️ ] This sauce does not exist at all')
+                
+            except Exception as e:
+                await msg.edit(content = f'[ ⁉️ ] An internal error occured. Error: {e}')
+
+
+        elif arg2.isnumeric():
+            msg = await ctx.send('Searching the web...')
+            await msg.edit(content = "Gallery has been found! Generating embed...")
             if IDinList(ctx, arg2):
                 embed = generateNHEmbed(arg2, True, ctx)
-                await ctx.send('[ ✅ ] This sauce already exists in your database', embed = embed)
+                await msg.edit(content = '[ ✅ ] This sauce already exists in your database', embed = embed)
             else:
                 embed = generateNHEmbed(arg2)
                 if cleanWS(embed.title) != '':
-                    await ctx.send('[ ❌ ] This sauce does not exist in your database', embed = embed)
+                    await msg.edit(content = '[ ❌ ] This sauce does not exist in your database', embed = embed)
                 else:
-                    await ctx.send('[ ⁉️ ] This sauce does not exist at all')
+                    await msg.edit(content = '[ ⁉️ ] This sauce does not exist at all')
         
         elif arg2 == "RANDOM":
-            
-            if arg3 == "NONE":
-                gallery = scrapeNHGallery()
-                try:
-                    doujinID = str(random.randint(1, int(max(gallery))))
+            msg = await ctx.send('Searching the web...')
+            gallery = scrapeNHGallery()
+            try:
+                doujinID = str(random.randint(1, int(max(gallery))))
+                await msg.edit(content = "Gallery has been found! Generating embed...")
 
-                    if IDinList(ctx, doujinID):
-                        embed = generateNHEmbed(doujinID, True, ctx)
-                        await ctx.send('[ ✅ ] This sauce already exists in your database', embed = embed)
+                if IDinList(ctx, doujinID):
+                    embed = generateNHEmbed(doujinID, True, ctx)
+                    await msg.edit(content = '[ ✅ ] This sauce already exists in your database', embed = embed)
+                else:
+                    embed = generateNHEmbed(doujinID)
+                    if cleanWS(embed.title) != '':
+                        await msg.edit(content = '[ ❌ ] This sauce does not exist in your database', embed = embed)
                     else:
-                        embed = generateNHEmbed(doujinID)
-                        if cleanWS(embed.title) != '':
-                            await ctx.send('[ ❌ ] This sauce does not exist in your database', embed = embed)
-                        else:
-                            await ctx.send('[ ⁉️ ] This sauce does not exist at all')
-                except:
-                    await ctx.send('[ ⁉️ ] An internal error occured.')
-        
-            elif arg3 == "NEW":
-                gallery = scrapeNHGallery()
-                try:
-                    doujinID = random.choice(gallery)
-                    if IDinList(ctx, doujinID):
-                        embed = generateNHEmbed(doujinID, True, ctx)
-                        await ctx.send('[ ✅ ] This sauce already exists in your database', embed = embed)
+                        await msg.edit(content = '[ ⁉️ ] This sauce does not exist at all')
+            except Exception as e:
+                await msg.edit(content = f'[ ⁉️ ] An internal error occured. Error: {e}')
+                
+        elif arg2 == "NEW":
+            msg = await ctx.send('Searching the web...')
+            gallery = scrapeNHGallery()
+            try:
+                doujinID = random.choice(gallery)
+                await msg.edit(content = "Gallery has been found! Generating embed...")
+                if IDinList(ctx, doujinID):
+                    embed = generateNHEmbed(doujinID, True, ctx)
+                    await msg.edit(content = '[ ✅ ] This sauce already exists in your database', embed = embed)
+                else:
+                    embed = generateNHEmbed(doujinID)
+                    if cleanWS(embed.title) != '':
+                        await msg.edit(content = '[ ❌ ] This sauce does not exist in your database', embed = embed)
                     else:
-                        embed = generateNHEmbed(doujinID)
-                        if cleanWS(embed.title) != '':
-                            await ctx.send('[ ❌ ] This sauce does not exist in your database', embed = embed)
-                        else:
-                            await ctx.send('[ ⁉️ ] This sauce does not exist at all')
-                except:
-                    await ctx.send('[ ⁉️ ] An internal error occured.')
-
-            elif arg3.isalpha():
-                gallery = scrapeNHGallery(arg3.lower())
-                try:
-                    doujinID = random.choice(gallery)
-                    if IDinList(ctx, doujinID):
-                        embed = generateNHEmbed(doujinID, True, ctx)
-                        await ctx.send('[ ✅ ] This sauce already exists in your database', embed = embed)
-                    else:
-                        embed = generateNHEmbed(doujinID)
-                        if cleanWS(embed.title) != '':
-                            await ctx.send('[ ❌ ] This sauce does not exist in your database', embed = embed)
-                        else:
-                            await ctx.send('[ ⁉️ ] This sauce does not exist at all')
-                except:
-                    await ctx.send('[ ⁉️ ] An internal error occured.')
-    
+                        await msg.edit(content = '[ ⁉️ ] This sauce does not exist at all')
+            except Exception as e:
+                await msg.edit(content = f'[ ⁉️ ] An internal error occured. Error: {e}')
     if arg1 == "DB":
         if arg2 == "RANDOM":
             IDs = []
-            filename = f"db/{ctx.guild.id}_database"
+            filename = f"db/server/{ctx.guild.id}_database"
             if os.stat(f"{filename}.json").st_size != 0:
                 with open(f"{filename}.json", 'r') as f:
                     data = json.load(f)
@@ -212,6 +261,8 @@ async def search(ctx, arg1, arg2 = "random", arg3 = "none"):
             else:
                 embed.description = "There's nothing here desu... why not try adding some sauces? (data file is empty)"
 
+    else:
+        pass
 
 
 
@@ -221,8 +272,24 @@ async def createDB(ctx, arg1 = "NH", arg2 = "NEW"):
     arg1 = arg1.upper()
     arg2 = arg2.upper()
 
+    if arg1 == "USER":
+        filename = f"db/users/{ctx.message.author.id}_database"
+        
+        dbList = {"ID" : f"{ctx.message.author.id}", "count" : 0, "sauces": [] } 
+
+        if arg2 == "NEW":
+            if not os.path.isfile(f"{filename}.json"):
+                with open(f"{filename}.json", "w") as fin:
+                    jstr = json.dumps(dbList)
+                    fin.write(jstr)
+                    fin.close()
+
+                await ctx.send(f'Created a json database for <@{ctx.message.author.id}>')
+            else:
+                await ctx.send(f'<@{ctx.message.author.id}> already has a json database!')
+
     if arg1 == "NH":
-        filename = f"db/{ctx.guild.id}_database"
+        filename = f"db/server/{ctx.guild.id}_database"
 
         dbList = {"ID" : f"{ctx.guild.id}", "count" : 0, "sauces": [] } 
         counter = 0
@@ -231,7 +298,6 @@ async def createDB(ctx, arg1 = "NH", arg2 = "NEW"):
         if arg2 == "NEW":
             if not os.path.isfile(f"{filename}.json"):
                 with open(f"{filename}.json", "w") as fin:
-                    dbList["count"] = counter
                     jstr = json.dumps(dbList)
                     fin.write(jstr)
                     fin.close()
@@ -309,7 +375,7 @@ def cleanWS(str):
 
 # Find if sauce is already in database
 def IDinList (ctx, givenID):
-    filename = f"db/{ctx.guild.id}_database.json"
+    filename = f"db/server/{ctx.guild.id}_database.json"
     print(f"Attempting to access {filename}")
     try:
         with open(filename) as f:
@@ -328,7 +394,7 @@ def IDinList (ctx, givenID):
 
 # Get sauce from database
 def getSauceFromDB (ctx, givenID):
-    filename = f"db/{ctx.guild.id}_database.json"
+    filename = f"db/server/{ctx.guild.id}_database.json"
     sauce = {'ID' : givenID, 'cover':' ', 'title':' ', 'sub':' ', 'parodies':[], 'tags':[], 'characters':[], 'artists':[], 'groups':[], 'languages':[], 'pages': ' ', 'uploaded': ' '}
     print(f"Attempting to access {filename}")
     try:
@@ -349,11 +415,13 @@ def getSauceFromDB (ctx, givenID):
         return sauce
 
 # Scrape Nhentai gallery
-def scrapeNHGallery (tag = "NONE"):
+def scrapeNHGallery (tag = "NONE", tags = {}):
     Url = "http://nhentai.net"
 
     if tag != "NONE":
         Url = f"http://nhentai.net/tag/{tag}/"
+    elif tags:
+        Url = f'https://nhentai.net/search/?q={"".join(tags)}'
 
     print(f"Looking up {Url}")
     page = requests.get(Url)
@@ -364,6 +432,8 @@ def scrapeNHGallery (tag = "NONE"):
         link = gallery["href"].split('/')[2]
         galleryLinks.append(link)
     
+    print(f"Obtained {len(galleryLinks)} galleries: {', '.join(galleryLinks)}")
+
     return galleryLinks
 
             
@@ -415,7 +485,9 @@ def scrapeNHLink (givenID):
             if 'Pages:' in tags.text:
                 sauce['pages'] = tag.text
         if 'Uploaded:' in tags.text:
-            sauce['uploaded'] = tags.span.time['datetime']
+            sauce['uploaded'] = datetime.strptime(tags.span.time['datetime'][:10], '%Y-%m-%d').strftime('%B %d, %Y')
+    
+    print(f"Finished scraping! ({givenID})")
     return sauce
 
 # Generate a discord embed for the given sauce
